@@ -1,0 +1,142 @@
+---
+kind: pipeline
+name: announce-start
+
+clone:
+  disable: true
+
+platform:
+  os: linux
+
+steps:
+  - name: announce
+    image: container.solid-build.xyz/drone/plugins/slack:latest
+    settings:
+      webhook:
+        from_secret: ryver_webhook
+      channel: drone
+      icon_url: https://img.icons8.com/office/80/000000/test-partial-passed.png
+      template: >
+        Start building {{repo.name}}/{{build.branch}} (#{{build.number}})
+
+---
+kind: pipeline
+name: linux-amd64
+
+clone:
+  depth: 1
+
+platform:
+  os: linux
+  arch: amd64
+
+workspace:
+  path: /go/src/github.com/minio/minio
+
+steps:
+- name: compile
+  image: golang:1.13-alpine
+  commands:
+  - apk add bash git make perl
+  - make build
+  environment:
+    GOROOT: /usr/local/go
+
+- name: container
+  image: plugins/docker
+  settings:
+    dockerfile: Dockerfile.release
+    registry: quay.io
+    repo: quay.io/josua-sr/minio
+    tag: RELEASE.2020-06-03T22-13-49Z-amd64
+    username:
+      from_secret: quay_username
+    password:
+      from_secret: quay_password
+
+---
+kind: pipeline
+name: linux-arm64
+
+clone:
+  depth: 1
+
+platform:
+  os: linux
+  arch: arm64
+
+workspace:
+  path: /go/src/github.com/minio/minio
+
+steps:
+- name: compile
+  image: golang:1.13-alpine
+  commands:
+  - apk add bash git make perl
+  - make build
+  environment:
+    GOROOT: /usr/local/go
+
+- name: container
+  image: plugins/docker
+  settings:
+    dockerfile: Dockerfile.release
+    registry: quay.io
+    repo: quay.io/josua-sr/minio
+    tag: RELEASE.2020-06-03T22-13-49Z-arm64
+    username:
+      from_secret: quay_username
+    password:
+      from_secret: quay_password
+
+---
+kind: pipeline
+name: manifest
+
+clone:
+  disable: true
+
+platform:
+  os: linux
+
+steps:
+  - name: container
+    image: plugins/manifest
+    settings:
+      target: quay.io/josua-sr/minio:RELEASE.2020-06-03T22-13-49Z
+      template: quay.io/josua-sr/minio:RELEASE.2020-06-03T22-13-49Z-ARCH
+      platforms:
+        - linux/amd64
+        - linux/arm64
+      username:
+        from_secret: quay_username
+      password:
+        from_secret: quay_password
+
+depends_on:
+- linux-amd64
+- linux-arm64
+
+---
+kind: pipeline
+name: announce-end
+
+clone:
+  disable: true
+
+platform:
+  os: linux
+
+steps:
+  - name: announce
+    image: container.solid-build.xyz/drone/plugins/slack:latest
+    settings:
+      webhook:
+        from_secret: ryver_webhook
+      channel: drone
+      icon_url: https://img.icons8.com/office/80/000000/test-passed.png
+      template: >
+        Finished building {{repo.name}}/{{build.branch}} (#{{build.number}})
+
+depends_on:
+- manifest
